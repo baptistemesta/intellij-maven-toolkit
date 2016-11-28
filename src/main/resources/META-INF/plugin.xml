@@ -1,0 +1,32 @@
+<idea-plugin url="https://plugins.jetbrains.com/plugin/8262?pr=" version="2">
+    <id>com.bmesta.mvntoolkit</id>
+    <name>Maven toolkit</name>
+    <vendor email="baptiste.mesta@gmail.com" url="https://github.com/baptistemesta">Baptiste Mesta</vendor>
+
+    <description><![CDATA[
+      This plugin add some refactoring optionm top maven modules.<br/>
+      <br/>
+      <a href="https://github.com/baptistemesta/maven-toolkit">GitHub</a> |
+      <a href="https://github.com/baptistemesta/maven-toolkit/issues">Issues</a>
+    ]]></description>
+
+    <change-notes><![CDATA[
+        <p>0.1.0</p>
+        Initial version
+    ]]>
+    </change-notes>
+
+    <idea-version since-build="143" />
+
+    <depends>com.intellij.modules.lang</depends>
+    <depends>org.jetbrains.idea.maven</depends>
+
+    <actions>
+        <action id="com.bmesta.mvntoolkit.action.merge"
+                class="com.bmesta.mvntoolkit.action.MergeModules"
+                text="Merge modules">
+            <add-to-group group-id="Maven.GlobalProjectMenu" anchor="last" />
+        </action>
+    </actions>
+
+</idea-plugin>
