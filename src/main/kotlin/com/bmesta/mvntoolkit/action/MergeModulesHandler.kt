@@ -28,13 +28,11 @@ class MergeModulesHandler : RefactoringActionHandler {
         val from = mavenProjects[0]
         val into = mavenProjects[1]
         if (from != null && into != null) {
-
-
             if (showRefactoringDialog()) {
                 CommandProcessor.getInstance().executeCommand(project, {
                     val action = {
                         try {
-                            doRefactoring(from, into)
+                            doRefactoring(project, from, into)
                         } catch (var2: IncorrectOperationException) {
                             LOG.error(var2)
                         }
@@ -46,8 +44,8 @@ class MergeModulesHandler : RefactoringActionHandler {
 
     }
 
-    private fun doRefactoring(from: MavenProject, into: MavenProject) {
-        ModulesMerger(from, into).merge()
+    private fun doRefactoring(projct: Project, from: MavenProject, into: MavenProject) {
+        ModulesMerger(projct, from, into).merge()
     }
 
     private fun showRefactoringDialog(): Boolean {

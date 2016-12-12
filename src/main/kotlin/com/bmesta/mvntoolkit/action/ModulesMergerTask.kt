@@ -10,6 +10,6 @@ import org.jetbrains.idea.maven.project.MavenProject
  */
 class ModulesMergerTask(project: Project, val from: MavenProject, val into: MavenProject) : Task.Backgroundable(project, "Merging modules...") {
     override fun run(p0: ProgressIndicator) {
-        ModulesMerger(from, into).merge()
+        ModulesMerger(project, from, into).merge()
     }
 }

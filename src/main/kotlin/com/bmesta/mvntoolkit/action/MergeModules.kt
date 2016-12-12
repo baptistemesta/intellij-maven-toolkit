@@ -10,9 +10,6 @@ import com.intellij.refactoring.actions.BaseRefactoringAction
  */
 class MergeModules() : BaseRefactoringAction() {
     override fun isEnabledOnElements(elements: Array<out PsiElement>): Boolean {
-        for (element in elements) {
-            println(element)
-        }
         return elements.size == 2
     }
 
@@ -24,6 +21,5 @@ class MergeModules() : BaseRefactoringAction() {
         return false
     }
 
-    //private fun available(e: AnActionEvent): Boolean = MavenActionUtil.getMavenProjects(e.dataContext).size == 2
 }
 
