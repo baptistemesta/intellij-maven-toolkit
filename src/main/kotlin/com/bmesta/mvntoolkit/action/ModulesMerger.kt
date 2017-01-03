@@ -10,6 +10,7 @@ import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Comparing
+import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiManager
 import org.jetbrains.idea.maven.dom.DependencyConflictId
@@ -20,7 +21,6 @@ import org.jetbrains.idea.maven.dom.model.MavenDomProjectModel
 import org.jetbrains.idea.maven.model.MavenArtifact
 import org.jetbrains.idea.maven.model.MavenId
 import org.jetbrains.idea.maven.project.MavenProject
-import org.jetbrains.idea.maven.project.MavenProjectsManager
 import java.util.*
 
 /**
@@ -40,17 +40,6 @@ class ModulesMerger(val project: Project, val from: MavenProject, val into: Mave
 
         progressIndicator.fraction = 0.10
 
-//        MavenDomProjectProcessorUtils.searchDependencyUsages()
-//
-//        val mavenDomModel = MavenDomUtil.getMavenDomModel(fromPsiPom, MavenDomProjectModel::class.java) ?: return
-//        val managedDependencies = GenerateManagedDependencyAction.collectManagingDependencies(mavenDomModel)
-//
-//        managedDependencies.forEach { println("key: " + it.key.artifactId + " value: " + it.value.artifactId) }
-//        val ids = MavenArtifactSearchDialog.searchForArtifact(project, managedDependencies.values)
-//        ids.forEach(::println)
-        val mavenProjectManager = MavenProjectsManager.getInstance(project)
-
-
         val fromId = from.mavenId
         val intoId = into.mavenId
         if (from.parentId != into.parentId) {
@@ -66,36 +55,62 @@ class ModulesMerger(val project: Project, val from: MavenProject, val into: Mave
 
         progressIndicator.fraction = 1.0
 
-        moveSources(from, into)
-        updateReferences(fromId, intoId)
-        removeModule(from)
-
-
-//        def Node moduleToRemove = parentPom.modules.module.find {
-//            it.text() == fromId
-//        }
-//        println "remove module ${moduleToRemove.text()} from pom $parentId"
-//        moduleToRemove.replaceNode {
-//
-//        }
-//        new File (into, "pom.xml").text = groovy.xml.XmlUtil.serialize(intoPom)
-//        new File (into.parent, "pom.xml").text = groovy.xml.XmlUtil.serialize(parentPom)
-//        println "remove dir $fromId"
-//        deleteDir(from)
-//        println "replace all dependencies on $fromGroup:$fromId by dependency on $intoGroup:$intoId"
-//        replaceAllDependencies(base, fromGroup, fromId, intoGroup, intoId)
+        moveSources(project, from, into)
+        updateReferences(project, fromId, intoId)
+        removeModule(project, from)
     }
 
-    private fun updateReferences(fromId: MavenId, intoId: MavenId) {
+    private fun updateReferences(project: Project, fromId: MavenId, intoId: MavenId) {
+        //TODO
     }
 
-    private fun removeModule(from: MavenProject) {
+    private fun removeModule(project: Project, from: MavenProject) {
+        val intoPsiFile = getPsiFile(from.file.parent, project)
+        object : WriteCommandAction<Any>(project, "Generate Dependency", intoPsiFile) {
+            @Throws(Throwable::class)
+            override fun run(result: Result<Any>) {
+                from.file.parent.delete(null)
+                //TODO update parent: remove from module list
+            }
+        }.execute()
     }
 
-    private fun moveSources(from: MavenProject, into: MavenProject) {
+    private fun moveSources(project: Project, from: MavenProject, into: MavenProject) {
+        val intoPsiFile = getPsiFile(from.file, project)
         val srcFolder = from.file.parent.findChild("src")
         srcFolder ?: return
-        srcFolder.move(null, into.file.parent)
+        object : WriteCommandAction<Any>(project, "Generate Dependency", intoPsiFile) {
+            @Throws(Throwable::class)
+            override fun run(result: Result<Any>) {
+                copyInto(srcFolder, into.file.parent)
+            }
+        }.execute()
+    }
+
+    private fun getPsiFile(file: VirtualFile, project: Project): PsiFile? {
+        val intoPsiFile = object : ReadAction<PsiFile?>() {
+            override fun run(p0: Result<PsiFile?>) {
+                p0.setResult(PsiManager.getInstance(project).findFile(file))
+            }
+
+        }.execute().resultObject
+        return intoPsiFile
+    }
+
+    private fun copyInto(src: VirtualFile, intoFolder: VirtualFile) {
+        val target = intoFolder.findChild(src.name)
+        if (target == null) {
+            src.move(null, intoFolder)
+            return
+        }
+        if (src.isDirectory) {
+            src.children.forEach {
+                copyInto(it, target)
+            }
+            src.delete(null)
+            return
+        }
+        println("error ${src.name} already exists")
     }
 
     private fun computeMergedDependencies(fromId: MavenId, intoId: MavenId): MutableSet<MavenArtifact> {

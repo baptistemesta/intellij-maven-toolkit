@@ -24,7 +24,7 @@ intellij {
 /*
     publish {
         username 'baptistemesta'
-        password System.getenv('PASSWORD')
+        password System.getenv('JETBRAINS_PASSWORD')
         pluginId ''
     }*/
 }
