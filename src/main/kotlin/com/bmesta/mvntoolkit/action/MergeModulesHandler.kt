@@ -6,6 +6,7 @@ import com.intellij.openapi.command.CommandProcessor
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.project.Project
+import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
 import com.intellij.refactoring.RefactoringActionHandler
@@ -44,8 +45,12 @@ class MergeModulesHandler : RefactoringActionHandler {
 
     }
 
-    private fun doRefactoring(projct: Project, from: MavenProject, into: MavenProject) {
-        ModulesMerger(projct, from, into).merge()
+    private fun doRefactoring(project: Project, from: MavenProject, into: MavenProject) {
+
+        PsiDocumentManager.getInstance(project).commitAllDocuments()
+        ModulesMergerTask(project, from, into).queue()
+
+        PsiDocumentManager.getInstance(project).commitAllDocuments()
     }
 
     private fun showRefactoringDialog(): Boolean {

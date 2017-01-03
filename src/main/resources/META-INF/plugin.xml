@@ -24,9 +24,11 @@
     <actions>
         <action id="com.bmesta.mvntoolkit.action.merge"
                 class="com.bmesta.mvntoolkit.action.MergeModules"
-                text="Merge modules">
+                text="Merge modules"
+                keymap="">
             <add-to-group group-id="Maven.GlobalProjectMenu" anchor="last" />
         </action>
+
     </actions>
 
 </idea-plugin>
