@@ -1,14 +1,13 @@
 package com.bmesta.mvntoolkit.action
 
-import com.intellij.notification.Notification
-import com.intellij.notification.NotificationType
-import com.intellij.notification.Notifications
 import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.application.Result
 import com.intellij.openapi.command.WriteCommandAction
+import com.intellij.openapi.components.ServiceManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.roots.ProjectFileIndex
 import com.intellij.openapi.util.Comparing
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiFile
@@ -42,10 +41,6 @@ class ModulesMerger(val project: Project, val from: MavenProject, val into: Mave
 
         val fromId = from.mavenId
         val intoId = into.mavenId
-        if (from.parentId != into.parentId) {
-            Notifications.Bus.notify(Notification("ModulesMerger", "Unable to merge modules", "modules should have the same parent", NotificationType.ERROR))
-            return
-        }
 
         val dependencies: MutableSet<MavenArtifact> = computeMergedDependencies(fromId, intoId)
 
@@ -53,15 +48,41 @@ class ModulesMerger(val project: Project, val from: MavenProject, val into: Mave
 
         writeDependencies(project, into, dependencies)
 
-        progressIndicator.fraction = 1.0
+        progressIndicator.fraction = 0.70
 
         moveSources(project, from, into)
         updateReferences(project, fromId, intoId)
+
+        progressIndicator.fraction = 1.00
         removeModule(project, from)
+
     }
 
+
     private fun updateReferences(project: Project, fromId: MavenId, intoId: MavenId) {
-        //TODO
+        val projectFileIndex =
+                ServiceManager.getService(project, ProjectFileIndex::class.java)
+        projectFileIndex.iterateContent { currentFile ->
+            if (currentFile.name == "pom.xml") {
+
+                val currentPomPsi = getPsiFile(currentFile, project) ?: return@iterateContent true
+
+                object : WriteCommandAction<Any>(project, "Update Dependency", currentPomPsi) {
+                    @Throws(Throwable::class)
+                    override fun run(result: Result<Any>) {
+                        val mavenDomModel = MavenDomUtil.getMavenDomModel(currentPomPsi, MavenDomProjectModel::class.java)
+                        mavenDomModel?.dependencies?.dependencies?.forEach {
+                            if (it.artifactId.stringValue == fromId.artifactId && it.groupId.stringValue == fromId.groupId) {
+                                it.artifactId.stringValue = intoId.artifactId
+                                it.groupId.stringValue = intoId.groupId
+                            }
+                        }
+                    }
+                }.execute()
+            }
+            true
+        }
+
     }
 
     private fun removeModule(project: Project, from: MavenProject) {
@@ -70,7 +91,14 @@ class ModulesMerger(val project: Project, val from: MavenProject, val into: Mave
             @Throws(Throwable::class)
             override fun run(result: Result<Any>) {
                 from.file.parent.delete(null)
-                //TODO update parent: remove from module list
+                val parentPomFile = from.file.parent.parent.findChild("pom.xml")
+                if (parentPomFile != null) {
+                    val psiFile = getPsiFile(parentPomFile, project)
+                    if (psiFile != null) {
+                        val mavenDomModel = MavenDomUtil.getMavenDomModel(psiFile, MavenDomProjectModel::class.java)
+                        mavenDomModel?.modules?.modules?.removeAll { it.stringValue == from.mavenId.artifactId }
+                    }
+                }
             }
         }.execute()
     }
@@ -125,12 +153,22 @@ class ModulesMerger(val project: Project, val from: MavenProject, val into: Mave
     }
 
     private fun writeDependencies(project: Project, mavenProject: MavenProject, dependencies: MutableSet<MavenArtifact>) {
-        val intoPsiFile = object : ReadAction<PsiFile?>() {
-            override fun run(p0: Result<PsiFile?>) = p0.setResult(PsiManager.getInstance(project).findFile(mavenProject.file))
+        val result = object : ReadAction<Pair<PsiFile?, MavenDomProjectModel?>>() {
+            override fun run(p0: Result<Pair<PsiFile?, MavenDomProjectModel?>>) {
+                val psiFile = PsiManager.getInstance(project).findFile(mavenProject.file)
+                if (psiFile == null) {
+                    p0.setResult(Pair(psiFile, null))
+                } else {
+                    val mavenDomModel = MavenDomUtil.getMavenDomModel(psiFile, MavenDomProjectModel::class.java)
+                    p0.setResult(Pair(psiFile, mavenDomModel))
+                }
+            }
 
         }.execute().resultObject
+        val intoPsiFile = result.first
+        val intoMavenModel = result.second
         intoPsiFile ?: return
-        val intoMavenModel = MavenDomUtil.getMavenDomModel(intoPsiFile, MavenDomProjectModel::class.java) ?: return
+        intoMavenModel ?: return
         object : WriteCommandAction<MavenDomDependency>(intoPsiFile.project, "Generate Dependency", intoPsiFile) {
             @Throws(Throwable::class)
             override fun run(result: Result<MavenDomDependency>) {
