@@ -84,6 +84,7 @@ class ModulesMerger(val project: Project, val from: MavenProject, val into: Mave
 
     private fun removeModule(project: Project, from: MavenProject) {
         val intoPsiFile = getPsiFile(from.file.parent, project)
+        //FIXME this seems to be null most of the time
         intoPsiFile ?: return
         write("Delete module", intoPsiFile) {
             from.file.parent.delete(null)
@@ -93,6 +94,7 @@ class ModulesMerger(val project: Project, val from: MavenProject, val into: Mave
                 if (psiFile != null) {
                     val mavenDomModel = getMavenDomModel(psiFile)
                     mavenDomModel?.modules?.modules?.removeAll { it.stringValue == from.mavenId.artifactId }
+                    //TODO remove the whole modules node if empty
                 }
             }
         }
@@ -170,6 +172,7 @@ class ModulesMerger(val project: Project, val from: MavenProject, val into: Mave
                 val managedDependenciesDom = managedDependencies[conflictId]
                 createDependency(each, intoMavenModel, managedDependenciesDom)
             }
+            //TODO update pom type to jar if needed
         }
     }
 
