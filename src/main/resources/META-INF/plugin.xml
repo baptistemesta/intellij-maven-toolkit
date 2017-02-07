@@ -22,13 +22,18 @@
     <description><![CDATA[
       This plugin add some refactoring options to maven modules.<br/>
       <br/>
-      <a href="https://github.com/baptistemesta/maven-toolkit">GitHub</a> |
-      <a href="https://github.com/baptistemesta/maven-toolkit/issues">Issues</a>
+      <p>
+      It adds a new action in the maven contextual menu. This action merge the first module select in the second one.
+      </p>
+
+      <br/>
+      <a href="https://github.com/baptistemesta/intellij-maven-toolkit">GitHub</a> |
+      <a href="https://github.com/baptistemesta/intellij-maven-toolkit/issues">Issues</a>
     ]]></description>
 
     <change-notes><![CDATA[
         <p>0.1.0</p>
-        Initial version
+        Initial version with merge modules action
     ]]>
     </change-notes>
 

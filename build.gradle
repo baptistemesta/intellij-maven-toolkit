@@ -2,6 +2,7 @@ buildscript {
     ext.kotlin_version = '1.0.6'
     repositories {
         mavenCentral()
+        maven { url 'http://dl.bintray.com/jetbrains/intellij-plugin-service' }
     }
     dependencies {
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
@@ -9,24 +10,24 @@ buildscript {
 }
 
 plugins {
-    id "org.jetbrains.intellij" version "0.1.10"
+    id "org.jetbrains.intellij" version "0.2.0"
 }
 
 apply plugin: 'org.jetbrains.intellij'
 apply plugin: 'kotlin'
 
 intellij {
-    version = '2016.3'
+    version = '2016.3.2'
     plugins = ['maven']
     pluginName = 'Maven toolkit'
+    downloadSources = true
     updateSinceUntilBuild = false
     sameSinceUntilBuild = false
-/*
+
     publish {
-        username 'baptistemesta'
-        password System.getenv('JETBRAINS_PASSWORD')
-        pluginId ''
-    }*/
+        username intellijPublishUsername
+        password intellijPublishPassword
+    }
 }
 
 group 'com.bmesta.intellij.maven.toolkit'
