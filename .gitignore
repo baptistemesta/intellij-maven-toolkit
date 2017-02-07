@@ -2,3 +2,5 @@
 build
 .idea
 out
+/maven-server-api.jar
+/maven.jar
