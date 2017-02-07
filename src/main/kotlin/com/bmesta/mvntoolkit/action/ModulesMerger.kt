@@ -36,26 +36,22 @@ class ModulesMerger(val project: Project, val from: MavenProject, val into: Mave
     }
 
     fun doMerge(progressIndicator: ProgressIndicator) {
-
-        progressIndicator.fraction = 0.10
-
-        val fromId = from.mavenId
-        val intoId = into.mavenId
-
-        val dependencies: MutableSet<MavenArtifact> = computeMergedDependencies(fromId, intoId)
-
-        progressIndicator.fraction = 0.50
-
+        incrementProgress(progressIndicator)
+        val dependencies: MutableSet<MavenArtifact> = computeMergedDependencies(from.mavenId, into.mavenId)
+        incrementProgress(progressIndicator)
         writeDependencies(project, into, dependencies)
-
-        progressIndicator.fraction = 0.70
-
+        incrementProgress(progressIndicator)
         moveSources(project, from, into)
-        updateReferences(project, fromId, intoId)
-
-        progressIndicator.fraction = 1.00
+        incrementProgress(progressIndicator)
+        updateReferences(project, from.mavenId, into.mavenId)
+        incrementProgress(progressIndicator)
         removeModule(project, from)
+        incrementProgress(progressIndicator)
 
+    }
+
+    private fun incrementProgress(progressIndicator: ProgressIndicator) {
+        progressIndicator.fraction += 0.15
     }
 
 
@@ -64,65 +60,75 @@ class ModulesMerger(val project: Project, val from: MavenProject, val into: Mave
                 ServiceManager.getService(project, ProjectFileIndex::class.java)
         projectFileIndex.iterateContent { currentFile ->
             if (currentFile.name == "pom.xml") {
-
                 val currentPomPsi = getPsiFile(currentFile, project) ?: return@iterateContent true
-
-                object : WriteCommandAction<Any>(project, "Update Dependency", currentPomPsi) {
-                    @Throws(Throwable::class)
-                    override fun run(result: Result<Any>) {
-                        val mavenDomModel = MavenDomUtil.getMavenDomModel(currentPomPsi, MavenDomProjectModel::class.java)
-                        mavenDomModel?.dependencies?.dependencies?.forEach {
-                            if (it.artifactId.stringValue == fromId.artifactId && it.groupId.stringValue == fromId.groupId) {
-                                it.artifactId.stringValue = intoId.artifactId
-                                it.groupId.stringValue = intoId.groupId
-                            }
-                        }
-                    }
-                }.execute()
+                replaceDependencyInPom(currentPomPsi, fromId, intoId, project)
             }
             true
         }
 
     }
 
-    private fun removeModule(project: Project, from: MavenProject) {
-        val intoPsiFile = getPsiFile(from.file.parent, project)
-        object : WriteCommandAction<Any>(project, "Generate Dependency", intoPsiFile) {
-            @Throws(Throwable::class)
-            override fun run(result: Result<Any>) {
-                from.file.parent.delete(null)
-                val parentPomFile = from.file.parent.parent.findChild("pom.xml")
-                if (parentPomFile != null) {
-                    val psiFile = getPsiFile(parentPomFile, project)
-                    if (psiFile != null) {
-                        val mavenDomModel = MavenDomUtil.getMavenDomModel(psiFile, MavenDomProjectModel::class.java)
-                        mavenDomModel?.modules?.modules?.removeAll { it.stringValue == from.mavenId.artifactId }
-                    }
+    private fun replaceDependencyInPom(currentPomPsi: PsiFile, fromId: MavenId, intoId: MavenId, project: Project) {
+        write("Update dependencies", currentPomPsi) {
+            val mavenDomModel = getMavenDomModel(currentPomPsi)
+            mavenDomModel?.dependencies?.dependencies?.forEach {
+                if (it.artifactId.stringValue == fromId.artifactId && it.groupId.stringValue == fromId.groupId) {
+                    it.artifactId.stringValue = intoId.artifactId
+                    it.groupId.stringValue = intoId.groupId
                 }
             }
-        }.execute()
+        }
+    }
+
+    private fun getMavenDomModel(currentPomPsi: PsiFile) = read { MavenDomUtil.getMavenDomModel(currentPomPsi, MavenDomProjectModel::class.java) }
+
+    private fun removeModule(project: Project, from: MavenProject) {
+        val intoPsiFile = getPsiFile(from.file.parent, project)
+        intoPsiFile ?: return
+        write("Delete module", intoPsiFile) {
+            from.file.parent.delete(null)
+            val parentPomFile = from.file.parent.parent.findChild("pom.xml")
+            if (parentPomFile != null) {
+                val psiFile = getPsiFile(parentPomFile, project)
+                if (psiFile != null) {
+                    val mavenDomModel = getMavenDomModel(psiFile)
+                    mavenDomModel?.modules?.modules?.removeAll { it.stringValue == from.mavenId.artifactId }
+                }
+            }
+        }
     }
 
     private fun moveSources(project: Project, from: MavenProject, into: MavenProject) {
         val intoPsiFile = getPsiFile(from.file, project)
         val srcFolder = from.file.parent.findChild("src")
         srcFolder ?: return
-        object : WriteCommandAction<Any>(project, "Generate Dependency", intoPsiFile) {
-            @Throws(Throwable::class)
-            override fun run(result: Result<Any>) {
-                copyInto(srcFolder, into.file.parent)
-            }
-        }.execute()
+        intoPsiFile ?: return
+        write("move sources", intoPsiFile) { copyInto(srcFolder, into.file.parent) }
+
     }
 
     private fun getPsiFile(file: VirtualFile, project: Project): PsiFile? {
-        val intoPsiFile = object : ReadAction<PsiFile?>() {
-            override fun run(p0: Result<PsiFile?>) {
-                p0.setResult(PsiManager.getInstance(project).findFile(file))
+        return read { psiFile(file, project) }
+    }
+
+    private fun psiFile(file: VirtualFile, project: Project): PsiFile? = PsiManager.getInstance(project).findFile(file)
+
+    private fun <T> read(body: () -> T?): T? {
+        return object : ReadAction<T>() {
+            override fun run(p0: Result<T>) {
+                p0.setResult(body())
             }
 
         }.execute().resultObject
-        return intoPsiFile
+    }
+
+    private fun <T> write(name: String, file: PsiFile, body: () -> T) {
+        object : WriteCommandAction<Any>(project, name, file) {
+            @Throws(Throwable::class)
+            override fun run(result: Result<Any>) {
+                body()
+            }
+        }.execute()
     }
 
     private fun copyInto(src: VirtualFile, intoFolder: VirtualFile) {
@@ -153,33 +159,18 @@ class ModulesMerger(val project: Project, val from: MavenProject, val into: Mave
     }
 
     private fun writeDependencies(project: Project, mavenProject: MavenProject, dependencies: MutableSet<MavenArtifact>) {
-        val result = object : ReadAction<Pair<PsiFile?, MavenDomProjectModel?>>() {
-            override fun run(p0: Result<Pair<PsiFile?, MavenDomProjectModel?>>) {
-                val psiFile = PsiManager.getInstance(project).findFile(mavenProject.file)
-                if (psiFile == null) {
-                    p0.setResult(Pair(psiFile, null))
-                } else {
-                    val mavenDomModel = MavenDomUtil.getMavenDomModel(psiFile, MavenDomProjectModel::class.java)
-                    p0.setResult(Pair(psiFile, mavenDomModel))
-                }
-            }
-
-        }.execute().resultObject
-        val intoPsiFile = result.first
-        val intoMavenModel = result.second
+        val intoPsiFile = getPsiFile(mavenProject.file, project)
         intoPsiFile ?: return
+        val intoMavenModel = getMavenDomModel(intoPsiFile)
         intoMavenModel ?: return
-        object : WriteCommandAction<MavenDomDependency>(intoPsiFile.project, "Generate Dependency", intoPsiFile) {
-            @Throws(Throwable::class)
-            override fun run(result: Result<MavenDomDependency>) {
-                val managedDependencies = GenerateManagedDependencyAction.collectManagingDependencies(intoMavenModel)
-                for (each in dependencies) {
-                    val conflictId = DependencyConflictId(each.groupId!!, each.artifactId!!, null, null)
-                    val managedDependenciesDom = managedDependencies[conflictId]
-                    createDependency(each, intoMavenModel, managedDependenciesDom)
-                }
+        write("Write new dependencies", intoPsiFile) {
+            val managedDependencies = GenerateManagedDependencyAction.collectManagingDependencies(intoMavenModel)
+            for (each in dependencies) {
+                val conflictId = DependencyConflictId(each.groupId!!, each.artifactId!!, null, null)
+                val managedDependenciesDom = managedDependencies[conflictId]
+                createDependency(each, intoMavenModel, managedDependenciesDom)
             }
-        }.execute()
+        }
     }
 
     private fun createDependency(dependency: MavenArtifact, intoMavenModel: MavenDomProjectModel, managedDependenciesDom: MavenDomDependency?) {
@@ -188,16 +179,13 @@ class ModulesMerger(val project: Project, val from: MavenProject, val into: Mave
             val res: MavenDomDependency = MavenDomUtil.createDomDependency(intoMavenModel.dependencies, null)
             res.groupId.stringValue = dependency.groupId
             res.artifactId.stringValue = dependency.artifactId
-            LOGGER.info("created dependency ${dependency.groupId}:${dependency.artifactId}")
         } else if (dependency.mavenId.version.equals(into.mavenId.version)) {
             val res: MavenDomDependency = MavenDomUtil.createDomDependency(intoMavenModel.dependencies, null)
             res.groupId.stringValue = dependency.groupId
             res.artifactId.stringValue = dependency.artifactId
             res.version.stringValue = "\${project.version}"
-            LOGGER.info("created dependency ${dependency.groupId}:${dependency.artifactId}:\${project.version}")
         } else {
             MavenDomUtil.createDomDependency(intoMavenModel.dependencies, null, dependency.mavenId)
-            LOGGER.info("created dependency ${dependency.groupId}:${dependency.artifactId}:${dependency.version}")
         }
     }
 
