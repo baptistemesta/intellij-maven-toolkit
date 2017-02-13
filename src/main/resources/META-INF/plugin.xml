@@ -32,6 +32,8 @@
     ]]></description>
 
     <change-notes><![CDATA[
+	<p>0.1.1</p>
+	fix plugin version
         <p>0.1.0</p>
         Initial version with merge modules action
     ]]>
