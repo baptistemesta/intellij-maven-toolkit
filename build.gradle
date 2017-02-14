@@ -31,7 +31,6 @@ intellij {
 }
 
 group 'com.bmesta.intellij.maven.toolkit'
-version '0.1.1'
 
 repositories {
     mavenCentral()
