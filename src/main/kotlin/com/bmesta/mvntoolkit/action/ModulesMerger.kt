@@ -99,22 +99,40 @@ class ModulesMerger(val project: Project, val from: MavenProject, val into: Mave
     private fun getMavenDomModel(currentPomPsi: PsiFile) = read { MavenDomUtil.getMavenDomModel(currentPomPsi, MavenDomProjectModel::class.java) }
 
     private fun removeModule(project: Project, from: MavenProject) {
-        val intoPsiFile = getPsiFile(from.file.parent, project)
-        //FIXME this seems to be null most of the time
-        intoPsiFile ?: return
-        write("Delete module", intoPsiFile) {
-            from.file.parent.delete(null)
-            val parentPomFile = from.file.parent.parent.findChild("pom.xml")
-            if (parentPomFile != null) {
-                val psiFile = getPsiFile(parentPomFile, project)
-                if (psiFile != null) {
-                    val mavenDomModel = getMavenDomModel(psiFile)
-                    mavenDomModel?.modules?.modules?.removeAll { it.stringValue == from.mavenId.artifactId }
-                    //TODO remove the whole modules node if empty
+        val parentPomFile = from.file.parent.parent.findChild("pom.xml")
+        parentPomFile ?: return
+        val parentPomPsi = getPsiFile(parentPomFile, project)
+        parentPomPsi ?: return
+        write("Delete module in parent", parentPomPsi) {
+            val mavenDomModel = getMavenDomModel(parentPomPsi)
+            val indexInModules = mavenDomModel?.modules?.modules?.indexOfFirst { it.stringValue == from.mavenId.artifactId }
+            if (indexInModules != null) {
+                removeModuleAt(indexInModules, mavenDomModel)
+                if (hasNoModules(mavenDomModel)) {
+                    deleteModuleTag(mavenDomModel)
                 }
             }
         }
+        write("delete the module") {
+            from.file.parent.delete(null)
+        }
     }
+
+    private fun removePackaging(mavenDomModel: MavenDomProjectModel?) {
+        mavenDomModel?.packaging?.xmlTag?.delete()
+    }
+
+    private fun isPomPackaging(mavenDomModel: MavenDomProjectModel?) = "pom" == mavenDomModel?.packaging?.rawText ?: ""
+
+    private fun removeModuleAt(indexInModules: Int, mavenDomModel: MavenDomProjectModel?) {
+        mavenDomModel?.modules?.xmlTag?.subTags?.get(indexInModules)?.delete()
+    }
+
+    private fun deleteModuleTag(mavenDomModel: MavenDomProjectModel?) {
+        mavenDomModel?.modules?.xmlTag?.delete()
+    }
+
+    private fun hasNoModules(mavenDomModel: MavenDomProjectModel?) = mavenDomModel?.modules?.modules?.size == 0
 
     private fun moveSources(project: Project, from: MavenProject, into: MavenProject) {
         val intoPsiFile = getPsiFile(from.file, project)
@@ -140,8 +158,8 @@ class ModulesMerger(val project: Project, val from: MavenProject, val into: Mave
         }.execute().resultObject
     }
 
-    private fun <T> write(name: String, file: PsiFile, body: () -> T) {
-        object : WriteCommandAction<Any>(project, name, file) {
+    private fun <T> write(name: String, vararg file: PsiFile, body: () -> T) {
+        object : WriteCommandAction<Any>(project, name, *file) {
             @Throws(Throwable::class)
             override fun run(result: Result<Any>) {
                 body()
@@ -188,7 +206,9 @@ class ModulesMerger(val project: Project, val from: MavenProject, val into: Mave
                 val managedDependenciesDom = managedDependencies[conflictId]
                 createDependency(each, intoMavenModel, managedDependenciesDom)
             }
-            //TODO update pom type to jar if needed
+            if (isPomPackaging(intoMavenModel)) {
+                removePackaging(intoMavenModel)
+            }
         }
     }
 
