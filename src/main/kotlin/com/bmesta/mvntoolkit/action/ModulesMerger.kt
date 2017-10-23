@@ -16,6 +16,9 @@
 
 package com.bmesta.mvntoolkit.action
 
+import com.intellij.notification.Notification
+import com.intellij.notification.NotificationType
+import com.intellij.notification.Notifications
 import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.application.Result
 import com.intellij.openapi.command.WriteCommandAction
@@ -34,57 +37,110 @@ import org.jetbrains.idea.maven.dom.generate.GenerateManagedDependencyAction
 import org.jetbrains.idea.maven.dom.model.MavenDomDependency
 import org.jetbrains.idea.maven.dom.model.MavenDomProjectModel
 import org.jetbrains.idea.maven.model.MavenArtifact
+import org.jetbrains.idea.maven.model.MavenExplicitProfiles
 import org.jetbrains.idea.maven.model.MavenId
 import org.jetbrains.idea.maven.project.MavenProject
-import java.util.*
+import org.jetbrains.idea.maven.project.MavenProjectReader
+import org.jetbrains.idea.maven.project.MavenProjectReaderProjectLocator
+import org.jetbrains.idea.maven.project.MavenProjectsManager
+import java.util.HashSet
+
 
 /**
  * @author Baptiste Mesta
  */
-class ModulesMerger(val project: Project, val from: MavenProject, val into: MavenProject) {
-
-
+class ModulesMerger(val project: Project, val progressIndicator: ProgressIndicator) {
     private val LOGGER = Logger.getInstance("#com.bmesta.mvntoolkit.action.ModulesMerger")
+    /**
+     * Tracks modules that have been merged in, so we don't try to merge them twice
+     */
+    private val mergedModules = mutableSetOf<MavenId>()
 
-    fun merge(progressIndicator: ProgressIndicator) {
+    /**
+     * Given a VirtualFile referencing a pom.xml, create a MavenProject
+     */
+    private fun hydrateMavenProject(file: VirtualFile): MavenProject {
+        val mavenProject = MavenProject(file)
+        val generalSettings = MavenProjectsManager.getInstance(project).generalSettings
+        val locator = MavenProjectReaderProjectLocator { null }
+        val reader = MavenProjectReader(project)
+        // initialize maven project
+        mavenProject.read(generalSettings, MavenExplicitProfiles.NONE, reader, locator)
 
-        doMerge(progressIndicator)
+        return mavenProject
     }
 
-    fun doMerge(progressIndicator: ProgressIndicator) {
-        incrementProgress(progressIndicator)
-        val dependencies: MutableSet<MavenArtifact> = computeMergedDependencies(from.mavenId, into.mavenId)
-        incrementProgress(progressIndicator)
+    /**
+     * Recursively merge Maven projects and their modules
+     */
+    fun merge(mavenProjects: List<MavenProject>): MavenProject {
+        return mavenProjects.reduce { from, into ->
+
+            val fromResult = if (from.existingModuleFiles.isNotEmpty()) {
+                // Merge child modules, then merge the result into the parent
+                val modules = from.existingModuleFiles.map { hydrateMavenProject(it) }
+                merge(modules + from)
+            } else {
+                from
+            }
+
+            if (mergedModules.contains(into.mavenId)) {
+                // If into was already merged, ignore it
+                fromResult
+            } else {
+                val intoResult = if (into.existingModuleFiles.isNotEmpty()
+                    // Don't recurse if we are merging the last child into the parent
+                    && !into.existingModuleFiles.contains(from.file)) {
+
+                    // Merge child modules, then merge the result into the parent
+                    val modules = into.existingModuleFiles.map { hydrateMavenProject(it) }
+                    merge(modules + into)
+                } else {
+                    into
+                }
+
+                doMerge(fromResult, intoResult)
+            }
+        }
+    }
+
+    private fun doMerge(from: MavenProject, into: MavenProject): MavenProject {
+        Notifications.Bus.notify(Notification("intellij-maven-toolkit", "Merging", "Merging ${from.name} into ${into.name}", NotificationType.INFORMATION))
+        incrementProgress()
+        val dependencies: MutableSet<MavenArtifact> = computeMergedDependencies(from, into)
+        incrementProgress()
         writeDependencies(project, into, dependencies)
-        incrementProgress(progressIndicator)
+        incrementProgress()
         moveSources(project, from, into)
-        incrementProgress(progressIndicator)
+        incrementProgress()
         updateReferences(project, from.mavenId, into.mavenId)
-        incrementProgress(progressIndicator)
+        incrementProgress()
         removeModule(project, from)
-        incrementProgress(progressIndicator)
+        incrementProgress()
 
+        mergedModules.add(from.mavenId)
+        return into
     }
 
-    private fun incrementProgress(progressIndicator: ProgressIndicator) {
+    private fun incrementProgress() {
         progressIndicator.fraction += 0.15
     }
 
 
     private fun updateReferences(project: Project, fromId: MavenId, intoId: MavenId) {
         val projectFileIndex =
-                ServiceManager.getService(project, ProjectFileIndex::class.java)
+            ServiceManager.getService(project, ProjectFileIndex::class.java)
         projectFileIndex.iterateContent { currentFile ->
             if (currentFile.name == "pom.xml") {
                 val currentPomPsi = getPsiFile(currentFile, project) ?: return@iterateContent true
-                replaceDependencyInPom(currentPomPsi, fromId, intoId, project)
+                replaceDependencyInPom(currentPomPsi, fromId, intoId)
             }
             true
         }
 
     }
 
-    private fun replaceDependencyInPom(currentPomPsi: PsiFile, fromId: MavenId, intoId: MavenId, project: Project) {
+    private fun replaceDependencyInPom(currentPomPsi: PsiFile, fromId: MavenId, intoId: MavenId) {
         write("Update dependencies", currentPomPsi) {
             val mavenDomModel = getMavenDomModel(currentPomPsi)
             mavenDomModel?.dependencies?.dependencies?.forEach {
@@ -183,14 +239,14 @@ class ModulesMerger(val project: Project, val from: MavenProject, val into: Mave
         println("error ${src.name} already exists")
     }
 
-    private fun computeMergedDependencies(fromId: MavenId, intoId: MavenId): MutableSet<MavenArtifact> {
+    private fun computeMergedDependencies(from: MavenProject, into: MavenProject): MutableSet<MavenArtifact> {
         val dependencies: MutableSet<MavenArtifact> = HashSet()
         //collect dependencies of 'to' pom
         dependencies.addAll(into.dependencyTree.map { it.artifact })
         //collect dependencies of 'from' pom
         dependencies.addAll(from.dependencyTree.map { it.artifact })
-        dependencies.removeAll { it.mavenId == fromId }
-        dependencies.removeAll { it.mavenId == intoId }
+        dependencies.removeAll { it.mavenId == from.mavenId }
+        dependencies.removeAll { it.mavenId == into.mavenId }
         return dependencies
     }
 
@@ -204,7 +260,7 @@ class ModulesMerger(val project: Project, val from: MavenProject, val into: Mave
             for (each in dependencies) {
                 val conflictId = DependencyConflictId(each.groupId!!, each.artifactId!!, null, null)
                 val managedDependenciesDom = managedDependencies[conflictId]
-                createDependency(each, intoMavenModel, managedDependenciesDom)
+                createDependency(each, mavenProject, intoMavenModel, managedDependenciesDom)
             }
             if (isPomPackaging(intoMavenModel)) {
                 removePackaging(intoMavenModel)
@@ -212,13 +268,13 @@ class ModulesMerger(val project: Project, val from: MavenProject, val into: Mave
         }
     }
 
-    private fun createDependency(dependency: MavenArtifact, intoMavenModel: MavenDomProjectModel, managedDependenciesDom: MavenDomDependency?) {
+    private fun createDependency(dependency: MavenArtifact, mavenProject: MavenProject, intoMavenModel: MavenDomProjectModel, managedDependenciesDom: MavenDomDependency?) {
         if (managedDependenciesDom != null && Comparing.equal(dependency.version, managedDependenciesDom.version.stringValue)) {
             // Generate dependency without <version> tag
             val res: MavenDomDependency = MavenDomUtil.createDomDependency(intoMavenModel.dependencies, null)
             res.groupId.stringValue = dependency.groupId
             res.artifactId.stringValue = dependency.artifactId
-        } else if (dependency.mavenId.version.equals(into.mavenId.version)) {
+        } else if (dependency.mavenId.version.equals(mavenProject.mavenId.version)) {
             val res: MavenDomDependency = MavenDomUtil.createDomDependency(intoMavenModel.dependencies, null)
             res.groupId.stringValue = dependency.groupId
             res.artifactId.stringValue = dependency.artifactId

@@ -42,14 +42,12 @@ class MergeModulesHandler : RefactoringActionHandler {
     override fun invoke(project: Project, elements: Array<out PsiElement>, context: DataContext?) {
 
         val mavenProjects = MavenActionUtil.getMavenProjects(context)
-        val from = mavenProjects[0]
-        val into = mavenProjects[1]
-        if (from != null && into != null) {
+        if (mavenProjects.none { it == null }) {
             if (showRefactoringDialog()) {
                 CommandProcessor.getInstance().executeCommand(project, {
                     val action = {
                         try {
-                            doRefactoring(project, from, into)
+                            doRefactoring(project, mavenProjects)
                         } catch (var2: IncorrectOperationException) {
                             LOG.error(var2)
                         }
@@ -61,10 +59,10 @@ class MergeModulesHandler : RefactoringActionHandler {
 
     }
 
-    private fun doRefactoring(project: Project, from: MavenProject, into: MavenProject) {
+    private fun doRefactoring(project: Project, mavenProjects: List<MavenProject>) {
 
         PsiDocumentManager.getInstance(project).commitAllDocuments()
-        ModulesMergerTask(project, from, into).queue()
+        ModulesMergerTask(project, mavenProjects).queue()
 
         PsiDocumentManager.getInstance(project).commitAllDocuments()
     }
