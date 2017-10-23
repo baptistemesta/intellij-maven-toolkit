@@ -43,7 +43,7 @@ import org.jetbrains.idea.maven.project.MavenProject
 import org.jetbrains.idea.maven.project.MavenProjectReader
 import org.jetbrains.idea.maven.project.MavenProjectReaderProjectLocator
 import org.jetbrains.idea.maven.project.MavenProjectsManager
-import java.util.HashSet
+import java.util.*
 
 
 /**
@@ -74,38 +74,43 @@ class ModulesMerger(val project: Project, val progressIndicator: ProgressIndicat
      * Recursively merge Maven projects and their modules
      */
     fun merge(mavenProjects: List<MavenProject>): MavenProject {
+        if (mavenProjects.size == 1 && isAParentModule(mavenProjects.first())) {
+            return mergeChildren(mavenProjects.first())
+        }
         return mavenProjects.reduce { from, into ->
-
-            val fromResult = if (from.existingModuleFiles.isNotEmpty()) {
-                // Merge child modules, then merge the result into the parent
-                val modules = from.existingModuleFiles.map { hydrateMavenProject(it) }
-                merge(modules + from)
+            val fromModuleMerged: MavenProject = if (isAParentModule(from)) {
+                mergeChildren(from)
             } else {
                 from
             }
-
-            if (mergedModules.contains(into.mavenId)) {
+            if (isAlreadyMerged(into)) {
                 // If into was already merged, ignore it
-                fromResult
+                fromModuleMerged
             } else {
-                val intoResult = if (into.existingModuleFiles.isNotEmpty()
-                    // Don't recurse if we are merging the last child into the parent
-                    && !into.existingModuleFiles.contains(from.file)) {
-
-                    // Merge child modules, then merge the result into the parent
-                    val modules = into.existingModuleFiles.map { hydrateMavenProject(it) }
-                    merge(modules + into)
+                val intoResult = if (isAParentModule(into)
+                        // Don't recurse if we are merging the last child into the parent
+                        && !into.existingModuleFiles.contains(from.file)) {
+                    mergeChildren(into)
                 } else {
                     into
                 }
-
-                doMerge(fromResult, intoResult)
+                doMerge(fromModuleMerged, intoResult)
             }
         }
+
     }
 
+    private fun getChildren(module: MavenProject) = module.existingModuleFiles.map { hydrateMavenProject(it) }
+
+    private fun isAlreadyMerged(into: MavenProject) = mergedModules.contains(into.mavenId)
+
+    private fun mergeChildren(parent: MavenProject): MavenProject = merge(getChildren(parent) + parent)
+
+    private fun isAParentModule(from: MavenProject) = from.existingModuleFiles.isNotEmpty()
+
     private fun doMerge(from: MavenProject, into: MavenProject): MavenProject {
-        Notifications.Bus.notify(Notification("intellij-maven-toolkit", "Merging", "Merging ${from.name} into ${into.name}", NotificationType.INFORMATION))
+        Notifications.Bus.notify(Notification("intellij-maven-toolkit", "Merging", "Merging ${from.mavenId} into ${into
+                .mavenId}", NotificationType.INFORMATION))
         incrementProgress()
         val dependencies: MutableSet<MavenArtifact> = computeMergedDependencies(from, into)
         incrementProgress()
@@ -129,7 +134,7 @@ class ModulesMerger(val project: Project, val progressIndicator: ProgressIndicat
 
     private fun updateReferences(project: Project, fromId: MavenId, intoId: MavenId) {
         val projectFileIndex =
-            ServiceManager.getService(project, ProjectFileIndex::class.java)
+                ServiceManager.getService(project, ProjectFileIndex::class.java)
         projectFileIndex.iterateContent { currentFile ->
             if (currentFile.name == "pom.xml") {
                 val currentPomPsi = getPsiFile(currentFile, project) ?: return@iterateContent true

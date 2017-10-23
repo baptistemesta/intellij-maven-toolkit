@@ -56,7 +56,6 @@ class MergeModulesHandler : RefactoringActionHandler {
                 }, "Merge modules", null)
             }
         }
-
     }
 
     private fun doRefactoring(project: Project, mavenProjects: List<MavenProject>) {

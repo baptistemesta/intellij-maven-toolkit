@@ -24,9 +24,9 @@ import com.intellij.refactoring.actions.BaseRefactoringAction
 /**
  * @author Baptiste Mesta
  */
-class MergeModules() : BaseRefactoringAction() {
+class MergeModules : BaseRefactoringAction() {
     override fun isEnabledOnElements(elements: Array<out PsiElement>): Boolean {
-        return elements.size > 1
+        return elements.isNotEmpty()
     }
 
     override fun getHandler(p0: DataContext): RefactoringActionHandler? {
