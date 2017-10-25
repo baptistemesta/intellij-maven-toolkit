@@ -1,5 +1,5 @@
 /*
- *  Copyright 2017 [name of copyright owner]
+ *  Copyright 2017 Baptiste Mesta
  *
  *    Licensed under the Apache License, Version 2.0 (the "License");
  *    you may not use this file except in compliance with the License.
@@ -13,7 +13,6 @@
  *    See the License for the specific language governing permissions and
  *    limitations under the License.
  */
-
 package com.bmesta.mvntoolkit.action
 
 import com.intellij.notification.Notification
@@ -43,8 +42,7 @@ import org.jetbrains.idea.maven.project.MavenProject
 import org.jetbrains.idea.maven.project.MavenProjectReader
 import org.jetbrains.idea.maven.project.MavenProjectReaderProjectLocator
 import org.jetbrains.idea.maven.project.MavenProjectsManager
-import java.util.*
-
+import java.util.HashSet
 
 /**
  * @author Baptiste Mesta
@@ -130,7 +128,6 @@ class ModulesMerger(val project: Project, val progressIndicator: ProgressIndicat
     private fun incrementProgress() {
         progressIndicator.fraction += 0.15
     }
-
 
     private fun updateReferences(project: Project, fromId: MavenId, intoId: MavenId) {
         val projectFileIndex =

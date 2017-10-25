@@ -13,20 +13,3 @@
  *    See the License for the specific language governing permissions and
  *    limitations under the License.
  */
-package com.bmesta.mvntoolkit.action
-
-import com.intellij.openapi.progress.ProgressIndicator
-import com.intellij.openapi.progress.Task
-import com.intellij.openapi.project.Project
-import org.jetbrains.idea.maven.project.MavenProject
-
-/**
- * @author Baptiste Mesta
- */
-class ModulesMergerTask(project: Project, val mavenProjects: List<MavenProject>) : Task.Backgroundable(project, "Merging modules...") {
-    override fun run(progressIndicator: ProgressIndicator) {
-
-        ModulesMerger(project, progressIndicator).merge(mavenProjects)
-
-    }
-}

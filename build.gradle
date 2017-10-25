@@ -11,6 +11,8 @@ buildscript {
 
 plugins {
     id "org.jetbrains.intellij" version "0.2.0"
+    id 'pl.allegro.tech.build.axion-release' version '1.7.1'
+    id "com.diffplug.gradle.spotless" version "3.4.0"
 }
 
 apply plugin: 'org.jetbrains.intellij'
@@ -43,4 +45,27 @@ dependencies {
 
 sourceSets {
     main.java.srcDirs += 'src/main/kotlin'
+}
+
+scmVersion {
+    tag { // Resulting tag will by x.y.z
+        prefix = ''
+        versionSeparator = ''
+    }
+    hooks {
+        //change in the readme the version
+        pre 'fileUpdate', [file: 'README.md', pattern: { v, p -> /$v/ }, replacement: { v, p -> "$v" }]
+        //create a commit for the release
+        pre 'commit', { v, p -> "chore(release): create release $v" }
+    }
+}
+project.version = scmVersion.version
+
+spotless {
+    kotlin {
+        // optionally takes a version
+        ktlint()
+        // also supports license headers
+        licenseHeaderFile 'HEADER'        // License header file
+    }
 }
